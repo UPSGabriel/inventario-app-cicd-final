@@ -1,0 +1,8 @@
+﻿node_modules
+npm-debug.log
+.git
+.github
+k8s
+docs
+.DS_Store
+data/*.json
