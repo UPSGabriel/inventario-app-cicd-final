@@ -330,6 +330,16 @@ Durante la implementación se documentaron, entre otros:
 
 Los errores forman parte de la evidencia del proceso de diagnóstico y corrección.
 
+## 12. Contribución de Jordy
+
+La guía paso a paso para la contribución funcional de Jordy está en:
+
+```text
+docs/GUIA_JORDY.md
+```
+
+La contribución propuesta agrega automatización real para el corte Blue-Green y un smoke test de los endpoints del despliegue. Debe implementarse, probarse y versionarse con la identidad Git de Jordy.
+
 ## Endpoints
 
 | Método y ruta | Función |
