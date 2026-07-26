@@ -23,7 +23,7 @@ spec:
     metadata:
       labels:
         app: inventario-app
-        version: v1
+        version: v2
 
     spec:
       # La imagen distroless :nonroot ejecuta la app con UID/GID 65532.
@@ -39,7 +39,7 @@ spec:
 
       containers:
         - name: inventario-app
-          image: ghcr.io/upsgabriel/inventario-app-cicd-final:285e565d1dee3f98c0b4e4df7a32101a86895390
+          image: ghcr.io/upsgabriel/inventario-app-cicd-final:a07b96493f7dbe1042062875efafc9cf9371c3f1
           imagePullPolicy: IfNotPresent
 
           ports:
@@ -52,13 +52,22 @@ spec:
               value: "3000"
 
             - name: APP_VERSION
-              value: "v1"
+              value: "v2"
 
             - name: APP_COLOR
-              value: "blue"
+              value: "green"
 
             - name: SIMULATE_FAILURE
               value: "false"
+
+            - name: STARTUP_DELAY_SECONDS
+              value: "12"
+
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: inventario-secret
+                  key: API_KEY
 
             - name: DB_PATH
               value: "/app/data/products.json"
@@ -67,16 +76,16 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 3
-            periodSeconds: 5
+            initialDelaySeconds: 1
+            periodSeconds: 2
             timeoutSeconds: 2
-            failureThreshold: 3
+            failureThreshold: 10
 
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
