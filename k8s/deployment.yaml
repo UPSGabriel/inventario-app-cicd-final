@@ -1,0 +1,99 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventario-app
+  labels:
+    app: inventario-app
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  progressDeadlineSeconds: 120
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app: inventario-app
+
+  template:
+    metadata:
+      labels:
+        app: inventario-app
+        version: v1
+
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: inventario-app
+          image: ghcr.io/upsgabriel/inventario-app-cicd-final:285e565d1dee3f98c0b4e4df7a32101a86895390
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+
+          env:
+            - name: PORT
+              value: "3000"
+
+            - name: APP_VERSION
+              value: "v1"
+
+            - name: APP_COLOR
+              value: "blue"
+
+            - name: SIMULATE_FAILURE
+              value: "false"
+
+            - name: DB_PATH
+              value: "/app/data/products.json"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          volumeMounts:
+            - name: inventario-data
+              mountPath: /app/data
+
+      volumes:
+        - name: inventario-data
+          emptyDir: {}
