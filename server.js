@@ -6,6 +6,13 @@ const db = require('./db');
 const APP_VERSION = process.env.APP_VERSION || 'v1';
 const APP_COLOR = process.env.APP_COLOR || 'blue';
 const SIMULATE_FAILURE = process.env.SIMULATE_FAILURE === 'true';
+const API_KEY = process.env.API_KEY || '';
+
+const parsedStartupDelay = Number(process.env.STARTUP_DELAY_SECONDS || 0);
+const STARTUP_DELAY_SECONDS = Number.isFinite(parsedStartupDelay) && parsedStartupDelay > 0
+  ? parsedStartupDelay
+  : 0;
+const STARTED_AT = Date.now();
 
 function createApp() {
   const app = express();
@@ -13,9 +20,19 @@ function createApp() {
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.get('/health', (req, res) => {
+    const elapsedSeconds = (Date.now() - STARTED_AT) / 1000;
+
+    if (elapsedSeconds < STARTUP_DELAY_SECONDS) {
+      return res.status(503).json({
+        status: 'starting',
+        retryAfterSeconds: Math.ceil(STARTUP_DELAY_SECONDS - elapsedSeconds),
+      });
+    }
+
     if (SIMULATE_FAILURE || !db.canAccessDb()) {
       return res.status(500).json({ status: 'error', reason: 'fallo simulado o base de datos no accesible' });
     }
+
     res.status(200).json({ status: 'ok' });
   });
 
@@ -24,6 +41,8 @@ function createApp() {
       version: APP_VERSION,
       color: APP_COLOR,
       hostname: os.hostname(),
+      startupDelaySeconds: STARTUP_DELAY_SECONDS,
+      secretConfigured: API_KEY.length > 0,
     });
   });
 
@@ -65,7 +84,13 @@ if (require.main === module) {
   const app = createApp();
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log('Servidor escuchando en puerto ' + PORT + ' (version=' + APP_VERSION + ', color=' + APP_COLOR + ')');
+    console.log(
+      'Servidor escuchando en puerto ' + PORT +
+      ' (version=' + APP_VERSION +
+      ', color=' + APP_COLOR +
+      ', startupDelaySeconds=' + STARTUP_DELAY_SECONDS +
+      ', secretConfigured=' + (API_KEY.length > 0) + ')'
+    );
   });
 }
 
