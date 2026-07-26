@@ -1,4 +1,4 @@
-﻿apiVersion: apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: inventario-app
@@ -26,7 +26,14 @@ spec:
         version: v1
 
     spec:
+      # La imagen distroless :nonroot ejecuta la app con UID/GID 65532.
+      # fsGroup permite que el volumen emptyDir montado en /app/data sea escribible
+      # sin dar privilegios de root al contenedor.
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
 
