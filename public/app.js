@@ -2,9 +2,10 @@ async function loadVersion() {
   const res = await fetch('/version');
   const data = await res.json();
   document.getElementById('version-info').textContent =
-    'Version ' + data.version + ' (' + data.color + ')';
+    'Versión ' + data.version + ' (' + data.color + ')';
   document.getElementById('hostname-info').textContent = data.hostname;
-  document.getElementById('banner').style.background = data.color;
+  document.getElementById('secret-badge').textContent = data.secretConfigured ? '🔑 Secret K8s: Activo' : '⚠️ Secret K8s: No configurado';
+  document.getElementById('banner').style.background = data.color === 'green' ? '#1b5e20' : '#1e2761';
 }
 
 async function loadProducts() {
