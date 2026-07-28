@@ -2,7 +2,7 @@
 
 **Integrantes:** Gabriel Alexander Cordova Solorzano y Jordy Espinoza  
 **Repositorio:** <https://github.com/UPSGabriel/inventario-app-cicd-final>  
-**Fecha de corte:** 26 de julio de 2026
+**Fecha de corte:** 28 de julio de 2026
 
 ## 1. Estrategia elegida: Blue-Green
 
@@ -32,8 +32,8 @@ practica.
 
 ## 3. Metricas DORA propias
 
-Los tiempos se calcularon con timestamps ISO-8601 conservados en Git y en el registro de
-despliegue:
+Los tiempos se calcularon con timestamps ISO-8601 conservados en Git y con el momento
+en que cada cambio quedo disponible en el cluster:
 
 | Cambio | Commit | Disponible en el cluster | Lead time |
 |---|---|---|---:|
@@ -41,26 +41,27 @@ despliegue:
 | Arranque lento `a07b964` | 2026-07-26 00:44:14 -05:00 | 2026-07-26 01:09:59.642816 -05:00 | 25 min 45.643 s |
 
 - **Lead time promedio:** `(50.6198 h + 0.4293 h) / 2 = 25.5246 h`.
-- **Frecuencia de despliegue:** `2 promociones exitosas / 2 dias calendario = 1 por dia`.
-- **Change failure rate simplificado:** `1 intento que requirio correccion / 3 intentos
-  registrados = 33.3 %`.
+- **Frecuencia de despliegue:** `3 promociones exitosas / 2 dias calendario = 1.5 por dia`.
+- **Change failure rate simplificado:** `1 despliegue que requirio correccion / 4 intentos = 25 %`.
 
-El denominador del change failure rate incluye el rollout que alcanzo su
-`progressDeadlineSeconds` y requirio corregir permisos del volumen, mas los dos
-despliegues exitosos con timestamp. Los cambios del selector Blue-Green no se cuentan
-como nuevos despliegues de aplicacion porque no cambian la imagen: solo enrutan trafico
-entre Deployments ya disponibles.
+Para la frecuencia se contabilizaron tres promociones: la v1 estable, la v2 mediante
+RollingUpdate y la v2 GREEN preparada y promovida dentro de la estrategia Blue-Green.
+Para CFR se considero tambien el despliegue inicial que alcanzo el progress deadline y
+requirio corregir permisos del volumen. No se contaron como fallos el error de quoting
+de PowerShell, el HTTP 503 intencional de readiness ni el rollback BLUE-GREEN usado como
+demostracion controlada.
 
-Frente a la tabla clasica vista en clase, la frecuencia de una vez por dia y el lead
-time promedio cercano a un dia muestran un flujo rapido para un laboratorio. El 33.3 %
-de fallos indica que la estabilidad todavia debe mejorar. La muestra es pequena, por lo
-que estos valores describen esta practica y no el rendimiento sostenido de un equipo.
+Frente a la tabla clasica vista en clase, el laboratorio muestra cambios relativamente
+frecuentes, pero el lead time promedio queda influido por el primer cambio, que espero
+mas de dos dias antes de quedar desplegado. El 25 % de fallos indica que todavia hay
+margen para mejorar estabilidad y automatizacion. La muestra es pequena y describe esta
+practica, no el rendimiento sostenido de un equipo en produccion.
 
 ## 4. Problemas reales y solucion
 
-1. **Vulnerabilidades criticas en la imagen inicial.** Trivy hizo fallar el run
-   `29980646258`. Se cambio el runtime final a distroless y el run de `285e565`
-   (`30054762604`) termino correctamente antes de publicar.
+1. **Vulnerabilidades criticas en la imagen inicial.** Trivy hizo fallar el pipeline
+   antes de publicar. Se cambio el runtime final a distroless y el siguiente run termino
+   correctamente.
 2. **Permisos con usuario no root.** La imagen distroless usa UID/GID 65532 y no podia
    escribir el JSON en el volumen. Se agregaron `runAsUser`, `runAsGroup` y `fsGroup`
    65532, manteniendo `readOnlyRootFilesystem` y el volumen escribible solo en
@@ -68,16 +69,20 @@ que estos valores describen esta practica y no el rendimiento sostenido de un eq
 3. **Readiness durante el arranque lento.** `/health` devuelve 503 durante 12 segundos.
    El readiness tolera ese periodo y la liveness comienza despues. Aumentar replicas no
    resolveria una sonda mal configurada: solo crearia mas pods todavia no listos.
-4. **Reproduccion y cambio de trafico.** Se corrigio el orden del README para crear el
-   Secret antes del Deployment y se agregaron scripts que validan el Deployment,
-   cambian el selector, verifican los endpoints y ejecutan smoke tests.
+4. **Cambio de trafico y validacion.** El primer intento con `kubectl patch` tuvo un
+   problema de quoting en PowerShell. Se reemplazo por `kubectl set selector` y Jordy
+   automatizo el corte y rollback con validacion de `EndpointSlice` y smoke tests.
+5. **Revalidacion final.** El 28 de julio se arranco nuevamente Minikube sobre Docker,
+   se verificaron BLUE y GREEN, se ejecuto el corte real a GREEN, smoke test v2/green,
+   rollback a BLUE, smoke test v1/blue y un rollout exitoso del Deployment base con
+   `maxUnavailable: 1`, `maxSurge: 1` y `progressDeadlineSeconds: 300`.
 
 ## 5. Conclusion
 
 El pipeline aplica fail-fast: las pruebas deben pasar, Trivy bloquea vulnerabilidades
 `CRITICAL` y solo entonces se publican las etiquetas SHA y `latest` en GHCR. Kubernetes
 aporta RollingUpdate para el despliegue base y Blue-Green para un corte y rollback
-rapidos. La principal deuda tecnica es la persistencia local; una siguiente iteracion
-deberia externalizar la base de datos y ejecutar automaticamente el smoke test despues
-del despliegue.
-
+rapidos. La practica tambien demostro que la persistencia local con `emptyDir` no es
+adecuada para compartir estado entre pods. Como siguiente mejora se externalizaria la
+base de datos y se integraria el smoke test como verificacion automatica posterior al
+despliegue.
