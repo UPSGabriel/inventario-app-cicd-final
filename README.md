@@ -21,6 +21,31 @@ Práctica de Sistemas Distribuidos: aplicación Node.js/Express con catálogo de
 - kubectl
 - PowerShell/Warp en Windows
 
+> **Importante:** los ejemplos usan el contexto `minikube`. Si hay otro clúster
+> configurado, compruebe primero `kubectl config get-contexts` y añada
+> `--context minikube` a los comandos para no modificar el clúster equivocado.
+
+## Entregables principales
+
+- Pipeline: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+- Docker multi-stage: [`Dockerfile`](Dockerfile)
+- RollingUpdate: [`k8s/deployment.yaml`](k8s/deployment.yaml) y
+  [`k8s/service.yaml`](k8s/service.yaml)
+- Blue-Green: [`k8s/blue-green/`](k8s/blue-green/)
+- Automatización de Jordy: [`scripts/switch-blue-green.ps1`](scripts/switch-blue-green.ps1)
+  y [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1)
+- Informe editable: [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md)
+- Informe final: [`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf)
+- Dependencia para regenerar el PDF: [`requirements-report.txt`](requirements-report.txt)
+- Evidencias verificadas y pendientes: [`docs/EVIDENCIAS_VERIFICACION.md`](docs/EVIDENCIAS_VERIFICACION.md)
+
+Regenerar el informe (solo si se modifica su contenido):
+
+```powershell
+py -m pip install -r requirements-report.txt
+py scripts/generate-informe.py
+```
+
 ## 1. Ejecutar y probar localmente
 
 ```powershell
@@ -98,7 +123,18 @@ minikube start --driver=docker
 kubectl get nodes
 ```
 
-Aplicar manifiestos base:
+El Deployment consume `inventario-secret`, por lo que el Secret debe existir **antes**
+de aplicar el manifiesto. El valor ficticio se genera en memoria y nunca se versiona:
+
+```powershell
+$env:API_KEY_DEMO = [guid]::NewGuid().ToString("N")
+kubectl create secret generic inventario-secret `
+  --from-literal=API_KEY=$env:API_KEY_DEMO `
+  --dry-run=client -o yaml |
+  kubectl apply -f -
+```
+
+Aplicar manifiestos base después de crear el Secret:
 
 ```powershell
 kubectl apply -f k8s/deployment.yaml
@@ -148,12 +184,31 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Comprobar el producto y eliminar el pod:
+Comprobar el producto, eliminar el pod y esperar su sustituto:
 
 ```powershell
 curl.exe -s http://127.0.0.1:3001/api/products
 kubectl delete pod $env:POD
-kubectl get pods -l app=inventario-app -w
+kubectl wait --for=delete pod/$env:POD --timeout=120s
+kubectl wait --for=condition=Ready pod -l app=inventario-app --timeout=120s
+
+$pods = kubectl get pods -l app=inventario-app -o json | ConvertFrom-Json
+$env:NEW_POD = ($pods.items | Where-Object {
+  $_.metadata.name -ne $env:POD
+} | Select-Object -First 1).metadata.name
+
+kubectl port-forward pod/$env:NEW_POD 3002:3000
+```
+
+El `port-forward` anterior termina cuando se elimina el pod. Con el nuevo tunel abierto,
+en otra terminal se demuestra que el producto ya no existe:
+
+```powershell
+$products = Invoke-RestMethod http://127.0.0.1:3002/api/products
+if ($products.sku -contains "PERSIST-001") {
+  throw "El producto todavia existe; revise que se consulto el pod sustituto."
+}
+Write-Host "[OK] PERSIST-001 desaparecio con el emptyDir del pod eliminado."
 ```
 
 Al recrearse el pod, el producto agregado al almacenamiento local del pod eliminado ya no existe. Esto es esperado con `emptyDir`/almacenamiento local y se documenta como observación de persistencia.
@@ -162,11 +217,15 @@ Al recrearse el pod, el producto agregado al almacenamiento local del pod elimin
 
 La credencial ficticia nunca se escribe en archivos versionados.
 
-Crear un valor aleatorio y el Secret:
+El Secret se crea antes del Deployment, como se muestra en la sección 4. Para
+regenerarlo manualmente:
 
 ```powershell
 $env:API_KEY_DEMO = [guid]::NewGuid().ToString("N")
-kubectl create secret generic inventario-secret --from-literal=API_KEY=$env:API_KEY_DEMO
+kubectl create secret generic inventario-secret `
+  --from-literal=API_KEY=$env:API_KEY_DEMO `
+  --dry-run=client -o yaml |
+  kubectl apply -f -
 ```
 
 Verificar sin revelar el valor:
@@ -271,7 +330,7 @@ GREEN debe responder `v2` / `green`.
 ### Corte BLUE -> GREEN
 
 ```powershell
-kubectl set selector service/inventario-blue-green app=inventario-bg,slot=green
+.\scripts\switch-blue-green.ps1 -Target green -Context minikube
 kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
 kubectl get endpoints inventario-blue-green
 curl.exe -s "$env:BGURL/version"
@@ -280,6 +339,11 @@ curl.exe -s "$env:BGURL/version"
 Varias peticiones demuestran que el tráfico llega únicamente a pods GREEN:
 
 ```powershell
+.\scripts\smoke-test.ps1 `
+  -BaseUrl $env:BGURL `
+  -ExpectedVersion v2 `
+  -ExpectedColor green
+
 1..4 | ForEach-Object {
   curl.exe -s "$env:BGURL/version"
   echo ""
@@ -289,7 +353,7 @@ Varias peticiones demuestran que el tráfico llega únicamente a pods GREEN:
 ### Rollback GREEN -> BLUE
 
 ```powershell
-kubectl set selector service/inventario-blue-green app=inventario-bg,slot=blue
+.\scripts\switch-blue-green.ps1 -Target blue -Context minikube
 kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
 kubectl get endpoints inventario-blue-green
 curl.exe -s "$env:BGURL/version"
@@ -316,7 +380,19 @@ Registros utilizados durante la práctica:
 - Cambio `285e565...`: commit `2026-07-23T18:57:46-05:00`; ejecución verificada en el clúster `2026-07-25T21:34:57.195746-05:00`.
 - Cambio `a07b964...`: commit `2026-07-26T00:44:14-05:00`; ejecución verificada en el clúster `2026-07-26T01:09:59.642816-05:00`.
 
-Los cálculos finales de Lead Time for Changes, Deployment Frequency y Change Failure Rate se consolidan en el documento de reflexión con las capturas/timestamps de la práctica.
+Resultados calculados:
+
+- lead time de `285e565...`: **50 h 37 min 11.196 s**;
+- lead time de `a07b964...`: **25 min 45.643 s**;
+- lead time promedio: **25.5246 h**;
+- frecuencia: **2 promociones exitosas / 2 días = 1 por día**;
+- change failure rate simplificado: **1 intento corregido / 3 intentos
+  registrados = 33.3 %**.
+
+Los cambios de selector Blue-Green no cuentan como una nueva promoción porque no
+cambian la imagen de los Deployments ya disponibles. El desarrollo completo y la
+reflexión están en [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md) y en
+[`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf).
 
 ## 11. Problemas reales observados
 
@@ -330,15 +406,28 @@ Durante la implementación se documentaron, entre otros:
 
 Los errores forman parte de la evidencia del proceso de diagnóstico y corrección.
 
-## 12. Contribución de Jordy
+## 12. Contribución funcional de Jordy
 
-La guía paso a paso para la contribución funcional de Jordy está en:
+Jordy agregó dos automatizaciones reproducibles:
 
-```text
-docs/GUIA_JORDY.md
+```powershell
+# Corte seguro con validación del Deployment y de los endpoints
+.\scripts\switch-blue-green.ps1 -Target green -Context minikube
+
+# Smoke test posterior al despliegue
+.\scripts\smoke-test.ps1 `
+  -BaseUrl $env:BGURL `
+  -ExpectedVersion v2 `
+  -ExpectedColor green
 ```
 
-La contribución propuesta agrega automatización real para el corte Blue-Green y un smoke test de los endpoints del despliegue. Debe implementarse, probarse y versionarse con la identidad Git de Jordy.
+`switch-blue-green.ps1` evita enviar tráfico a un Deployment no disponible, confirma
+el selector y verifica que todos los endpoints pertenezcan al color solicitado.
+`smoke-test.ps1` valida `/health`, `/version` y `/api/products`, con reintentos para el
+arranque lento y aserciones opcionales de versión/color.
+
+La explicación y los pasos de versionado con la identidad Git de Jordy están en
+[`docs/GUIA_JORDY.md`](docs/GUIA_JORDY.md).
 
 ## Endpoints
 

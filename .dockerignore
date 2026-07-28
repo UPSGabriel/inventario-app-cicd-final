@@ -1,8 +1,11 @@
-﻿node_modules
+node_modules
 npm-debug.log
 .git
 .github
 k8s
 docs
+scripts
+output
 .DS_Store
 data/*.json
+requirements-report.txt
