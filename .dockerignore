@@ -8,4 +8,3 @@ scripts
 output
 .DS_Store
 data/*.json
-requirements-report.txt

@@ -36,15 +36,6 @@ Práctica de Sistemas Distribuidos: aplicación Node.js/Express con catálogo de
   y [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1)
 - Informe editable: [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md)
 - Informe final: [`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf)
-- Dependencia para regenerar el PDF: [`requirements-report.txt`](requirements-report.txt)
-- Evidencias verificadas y pendientes: [`docs/EVIDENCIAS_VERIFICACION.md`](docs/EVIDENCIAS_VERIFICACION.md)
-
-Regenerar el informe (solo si se modifica su contenido):
-
-```powershell
-py -m pip install -r requirements-report.txt
-py scripts/generate-informe.py
-```
 
 ## 1. Ejecutar y probar localmente
 
