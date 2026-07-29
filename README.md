@@ -35,7 +35,7 @@ Práctica de Sistemas Distribuidos: aplicación Node.js/Express con catálogo de
 - Automatización de Jordy: [`scripts/switch-blue-green.ps1`](scripts/switch-blue-green.ps1)
   y [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1)
 - Informe editable: [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md)
-- Informe final: [`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf)
+- Informe final: [`output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf`](output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf)
 
 ## 1. Ejecutar y probar localmente
 
@@ -383,7 +383,7 @@ Resultados calculados:
 Los cambios de selector Blue-Green no cuentan como una nueva promoción porque no
 cambian la imagen de los Deployments ya disponibles. El desarrollo completo y la
 reflexión están en [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md) y en
-[`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf).
+[`output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf`](output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf).
 
 ## 11. Problemas reales observados
 
