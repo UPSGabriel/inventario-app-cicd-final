@@ -1,25 +1,124 @@
-# Inventario App — CI/CD y Kubernetes
+# Inventario App — Examen Final CI/CD y Kubernetes
 
-Práctica de Sistemas Distribuidos: aplicación Node.js/Express con catálogo de inventario, Docker multi-stage, GitHub Actions, GHCR, Kubernetes sobre Minikube, RollingUpdate, Blue-Green y buenas prácticas de seguridad/disponibilidad.
+**Sistemas Distribuidos — Universidad Politécnica Salesiana**  
+**Integrantes:** Gabriel Alexander Córdova Solórzano y Jordy Espinoza  
+**Repositorio:** `UPSGabriel/inventario-app-cicd-final`
 
-## Arquitectura y componentes
+Aplicación Node.js/Express de catálogo de inventario utilizada para implementar y demostrar un flujo completo de **Docker + CI/CD + GHCR + Kubernetes + RollingUpdate + Blue-Green**, incluyendo seguridad, probes de salud, pérdida de persistencia y métricas DORA.
 
-- Aplicación Node.js/Express con interfaz web y API REST.
-- Persistencia local en JSON (`data/products.json`).
-- Dockerfile multi-stage: ejecuta `npm test` durante el build y usa runtime distroless sin root.
-- GitHub Actions con dos jobs encadenados: pruebas y build/scan/push.
-- Imagen publicada en `ghcr.io/upsgabriel/inventario-app-cicd-final` con tag SHA y `latest`.
-- Kubernetes: 2 réplicas, RollingUpdate, readiness/liveness probes, recursos y contexto de seguridad.
-- Estrategia adicional: Blue-Green con dos Deployments y un Service que cambia de selector.
-- Tres componentes adicionales implementados: Secret, Trivy y arranque lento configurable.
+---
 
-## Requisitos
+## 1. Resumen de lo implementado
 
-- Node.js y npm
+| Requisito | Implementación en este repositorio |
+|---|---|
+| Aplicación funcional | Node.js/Express + interfaz web + API REST + JSON local |
+| Docker | Dockerfile multi-stage con pruebas durante el build |
+| Runtime seguro | Distroless Node.js 22, usuario `nonroot` |
+| CI/CD | GitHub Actions con jobs `build-test` y `build-push` |
+| Fail-fast | `build-push` depende de `build-test` |
+| Registry | GHCR con tag del SHA y `latest` |
+| Kubernetes base | Deployment + Service sobre Minikube |
+| Réplicas | `2` |
+| RollingUpdate | `maxUnavailable: 1` y `maxSurge: 1` |
+| Health checks | readiness + liveness sobre `/health` |
+| Persistencia | `emptyDir` + JSON local; se demuestra pérdida al recrear el pod |
+| Segunda estrategia | Blue-Green con BLUE v1 y GREEN v2 |
+| Extra 1 | Kubernetes Secret mediante `secretKeyRef` |
+| Extra 2 | Trivy bloquea imágenes con vulnerabilidades `CRITICAL` |
+| Extra 3 | `STARTUP_DELAY_SECONDS` + readiness realista |
+| Automatización | scripts para switch Blue-Green y smoke test |
+| Métricas | Lead Time, Deployment Frequency y Change Failure Rate |
+
+> Se implementaron **los tres componentes adicionales**: Secret, Trivy y readiness con arranque lento. Esto cumple la condición técnica del examen para optar por los **+2 puntos adicionales**.
+
+---
+
+## 2. Arquitectura
+
+```text
+Developer
+   |
+   | git push main
+   v
+GitHub Actions
+   |
+   +--> build-test
+   |      - npm ci
+   |      - npm test
+   |
+   +--> build-push
+          - docker build
+          - Trivy CRITICAL
+          - push SHA
+          - push latest
+                  |
+                  v
+                 GHCR
+                  |
+                  v
+              Minikube
+                  |
+        +---------+----------+
+        |                    |
+  RollingUpdate          Blue-Green
+  inventario-app      BLUE v1 / GREEN v2
+        |                    |
+        +---------+----------+
+                  |
+               Service
+                  |
+             Navegador/API
+```
+
+La aplicación usa un archivo JSON como almacenamiento local. En Kubernetes se monta sobre un volumen `emptyDir`, por lo que cada pod mantiene su propio estado efímero.
+
+---
+
+## 3. Estructura principal del repositorio
+
+```text
+.
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml
+├── data/
+├── docs/
+│   ├── EVIDENCIAS_VERIFICACION.md
+│   ├── GUIA_JORDY.md
+│   └── INFORME_REFLEXION.md
+├── k8s/
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   └── blue-green/
+│       ├── blue-deployment.yaml
+│       ├── green-deployment.yaml
+│       └── service.yaml
+├── output/pdf/
+│   └── informe-reflexion-cicd.pdf
+├── public/
+├── scripts/
+│   ├── switch-blue-green.ps1
+│   ├── smoke-test.ps1
+│   └── generate-informe.py
+├── Dockerfile
+├── server.js
+├── db.js
+└── README.md
+```
+
+---
+
+# GUÍA DE REPRODUCCIÓN PASO A PASO
+
+## 4. Requisitos
+
+- Git
+- Node.js + npm
 - Docker Desktop
 - Minikube
 - kubectl
-- PowerShell/Warp en Windows
+- PowerShell / Warp en Windows
 
 > **Importante:** los ejemplos usan el contexto `minikube`. Si hay otro clúster
 > configurado, compruebe primero `kubectl config get-contexts` y añada
@@ -37,11 +136,40 @@ Práctica de Sistemas Distribuidos: aplicación Node.js/Express con catálogo de
 - Informe editable: [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md)
 - Informe final: [`output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf`](output/pdf/EspinozaJordy_CordovaGabriel_InformeRelfexion_EXAMENFINAL.pdf)
 
-## 1. Ejecutar y probar localmente
+Clonar:
+
+```powershell
+git clone https://github.com/UPSGabriel/inventario-app-cicd-final.git
+cd inventario-app-cicd-final
+```
+
+
+Verificar herramientas:
+
+```powershell
+node --version
+npm --version
+docker --version
+kubectl version --client
+minikube version
+```
+
+---
+
+## 5. Aplicación local
+
+Instalar dependencias y ejecutar pruebas:
 
 ```powershell
 npm ci
 npm test
+```
+
+La suite actual contiene 5 pruebas que validan salud, versión, creación/listado, eliminación y validación de datos obligatorios.
+
+Ejecutar:
+
+```powershell
 npm start
 ```
 
@@ -53,79 +181,189 @@ curl.exe -s http://localhost:3000/version
 curl.exe -s http://localhost:3000/api/products
 ```
 
-## 2. Docker multi-stage
+Respuesta esperada de `/health` cuando la app está lista:
 
-Construir la imagen local:
-
-```powershell
-docker build -t inventario-app:v1 --build-arg APP_VERSION=v1 --build-arg APP_COLOR=blue .
+```json
+{"status":"ok"}
 ```
 
-El build falla si `npm test` falla.
+---
+
+## 6. Docker multi-stage y fail-fast
+
+El `Dockerfile` utiliza dos etapas:
+
+1. **build** con `node:22-alpine`: instala dependencias, copia el proyecto, ejecuta `npm test` y elimina dependencias de desarrollo;
+2. **runtime** con `gcr.io/distroless/nodejs22-debian13:nonroot`: contiene únicamente lo necesario para ejecutar la aplicación con usuario sin privilegios.
+
+La parte clave es:
+
+```dockerfile
+RUN npm ci
+COPY . .
+RUN npm test
+RUN npm prune --omit=dev
+```
+
+Si las pruebas fallan, el build de Docker se detiene y no se genera una imagen de producción válida.
+
+Construir localmente:
+
+```powershell
+docker build -t inventario-app:local .
+```
 
 Ejecutar:
 
 ```powershell
 docker rm -f inventario-demo 2>$null
-docker run -d --name inventario-demo -p 3000:3000 inventario-app:v1
-docker ps
+docker run -d --name inventario-demo -p 3000:3000 inventario-app:local
 ```
 
 Validar:
 
 ```powershell
-curl.exe -s http://localhost:3000/
 curl.exe -s http://localhost:3000/health
 curl.exe -s http://localhost:3000/version
 curl.exe -s http://localhost:3000/api/products
 ```
 
-Eliminar contenedor de prueba:
+Limpiar:
 
 ```powershell
 docker rm -f inventario-demo
 ```
 
-## 3. Pipeline CI/CD
+---
 
-Workflow: `.github/workflows/ci-cd.yml`.
+## 7. Pipeline CI/CD con GitHub Actions
 
-Cada push a `main` ejecuta:
+Workflow:
 
-1. `npm ci`
-2. `npm test`
-3. build de la imagen Docker
-4. escaneo Trivy con fallo ante vulnerabilidades `CRITICAL`
-5. login en GHCR
-6. publicación con `${github.sha}` y `latest`
+```text
+.github/workflows/ci-cd.yml
+```
 
-La imagen puede descargarse con:
+Se ejecuta con cada `push` a `main` y también permite `workflow_dispatch`.
+
+### Job 1 — `build-test`
+
+```text
+checkout
+  -> setup Node 20
+  -> npm ci
+  -> npm test
+```
+
+### Job 2 — `build-push`
+
+Está encadenado mediante:
+
+```yaml
+needs: build-test
+```
+
+Por tanto, si las pruebas fallan, este job no publica la imagen.
+
+Flujo:
+
+```text
+docker build
+   -> Trivy
+   -> login GHCR
+   -> push <SHA>
+   -> push latest
+```
+
+La imagen se publica como:
+
+```text
+ghcr.io/upsgabriel/inventario-app-cicd-final:<SHA>
+ghcr.io/upsgabriel/inventario-app-cicd-final:latest
+```
+
+Descargar la última imagen:
 
 ```powershell
 docker pull ghcr.io/upsgabriel/inventario-app-cicd-final:latest
 ```
 
-## 4. Minikube y despliegue RollingUpdate
+### Evidencia CI/CD
 
-Iniciar Minikube:
+Durante el desarrollo hubo un run que falló por vulnerabilidades críticas detectadas por Trivy. Se cambió el runtime final a distroless y los siguientes runs completaron correctamente las pruebas, el escaneo y la publicación.
+
+Los últimos cambios integrados por Jordy también ejecutaron el workflow correctamente en `main`.
+
+---
+
+## 8. Trivy — componente adicional 1
+
+Trivy se ejecuta **después de construir la imagen y antes de publicarla**:
+
+```yaml
+- name: Escanear imagen con Trivy
+  uses: aquasecurity/trivy-action@v0.36.0
+  with:
+    image-ref: ghcr.io/upsgabriel/inventario-app-cicd-final:${{ github.sha }}
+    format: table
+    exit-code: "1"
+    vuln-type: os,library
+    severity: CRITICAL
+```
+
+`exit-code: "1"` significa que una vulnerabilidad `CRITICAL` hace fallar el job; el push a GHCR no se ejecuta.
+
+Para reproducir el pipeline basta realizar un cambio versionado y subirlo a `main`:
+
+```powershell
+git add .
+git commit -m "Prueba de pipeline"
+git push origin main
+```
+
+Luego revisar:
+
+```text
+GitHub -> Actions -> ci-cd
+```
+
+---
+
+## 9. Minikube y Kubernetes base
+
+Iniciar Docker Desktop y luego:
 
 ```powershell
 minikube start --driver=docker
+kubectl config current-context
 kubectl get nodes
 ```
 
-El Deployment consume `inventario-secret`, por lo que el Secret debe existir **antes**
-de aplicar el manifiesto. El valor ficticio se genera en memoria y nunca se versiona:
+El contexto esperado es:
+
+```text
+minikube
+```
+
+### Crear el Secret antes del Deployment
 
 ```powershell
 $env:API_KEY_DEMO = [guid]::NewGuid().ToString("N")
+
 kubectl create secret generic inventario-secret `
   --from-literal=API_KEY=$env:API_KEY_DEMO `
   --dry-run=client -o yaml |
   kubectl apply -f -
 ```
 
-Aplicar manifiestos base después de crear el Secret:
+Comprobar sin revelar la credencial:
+
+```powershell
+kubectl get secret inventario-secret
+kubectl describe secret inventario-secret
+```
+
+### Desplegar
 
 ```powershell
 kubectl apply -f k8s/deployment.yaml
@@ -134,31 +372,176 @@ kubectl rollout status deployment/inventario-app
 kubectl get pods -l app=inventario-app
 ```
 
-Abrir el Service:
+El Deployment usa:
+
+```yaml
+replicas: 2
+progressDeadlineSeconds: 300
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 1
+```
+
+Comprobar directamente en el clúster:
+
+```powershell
+kubectl get deployment inventario-app -o jsonpath="{.spec.strategy.rollingUpdate}"
+echo ""
+kubectl get deployment inventario-app -o jsonpath="{.spec.progressDeadlineSeconds}"
+echo ""
+```
+
+Resultado validado durante la práctica:
+
+```text
+{"maxSurge":1,"maxUnavailable":1}
+300
+```
+
+### Abrir el Service
 
 ```powershell
 minikube service inventario-app --url
 ```
 
-Guardar la URL devuelta, por ejemplo:
+Guardar la URL obtenida:
 
 ```powershell
 $env:URL = "http://127.0.0.1:PUERTO"
+
 curl.exe -s "$env:URL/health"
 curl.exe -s "$env:URL/version"
 curl.exe -s "$env:URL/api/products"
 ```
 
-## 5. Persistencia local y recreación de pod
+---
 
-La aplicación usa un JSON local dentro del pod. Para demostrar su comportamiento, crear un producto en un pod concreto mediante port-forward:
+## 10. Secret de Kubernetes — componente adicional 2
+
+El manifiesto **no contiene la credencial**. La variable se inyecta desde Kubernetes:
+
+```yaml
+- name: API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: inventario-secret
+      key: API_KEY
+```
+
+La app únicamente devuelve en `/version`:
+
+```json
+{"secretConfigured":true}
+```
+
+Nunca devuelve el valor del Secret.
+
+Además, la interfaz web muestra un indicador visual:
+
+```text
+Secret K8s: Activo
+```
+
+cuando la variable fue inyectada correctamente.
+
+---
+
+## 11. Readiness realista + arranque lento — componente adicional 3
+
+La app implementa:
+
+```text
+STARTUP_DELAY_SECONDS
+```
+
+En la versión v2 Kubernetes configura:
+
+```yaml
+- name: STARTUP_DELAY_SECONDS
+  value: "12"
+```
+
+Durante los primeros 12 segundos `/health` responde:
+
+```text
+HTTP 503
+status: starting
+```
+
+Después responde `200` con `status: ok`.
+
+El readiness probe consulta `/health`:
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 1
+  periodSeconds: 2
+  timeoutSeconds: 2
+  failureThreshold: 10
+```
+
+La liveness comienza después:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 10
+```
+
+Demostración:
+
+```powershell
+kubectl get pods -l app=inventario-app -w
+```
+
+En otra terminal:
+
+```powershell
+kubectl describe pod NOMBRE_DEL_POD
+```
+
+Durante la práctica se observó un evento de readiness con HTTP `503` durante el arranque y posteriormente el pod quedó `1/1 Running`.
+
+### ¿Por qué más réplicas no solucionan una readiness incorrecta?
+
+Porque crear más pods no hace que una instancia que todavía está inicializando pueda recibir tráfico. El readiness probe es el mecanismo que mantiene al pod fuera de los endpoints del Service hasta que realmente está preparado.
+
+---
+
+## 12. Prueba de persistencia
+
+La aplicación usa:
+
+```text
+DB_PATH=/app/data/products.json
+```
+
+montado sobre:
+
+```yaml
+emptyDir: {}
+```
+
+El objetivo es demostrar que los datos escritos dentro de un pod desaparecen cuando ese pod es eliminado.
+
+### Crear un producto en un pod concreto
+
+Terminal 1:
 
 ```powershell
 $env:POD = (kubectl get pods -l app=inventario-app -o jsonpath="{.items[0].metadata.name}")
 kubectl port-forward pod/$env:POD 3001:3000
 ```
 
-En otra terminal:
+Terminal 2:
 
 ```powershell
 $body = @{
@@ -175,97 +558,63 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Comprobar el producto, eliminar el pod y esperar su sustituto:
+Comprobar:
 
 ```powershell
 curl.exe -s http://127.0.0.1:3001/api/products
+```
+
+Después eliminar el pod:
+
+```powershell
 kubectl delete pod $env:POD
 kubectl wait --for=delete pod/$env:POD --timeout=120s
 kubectl wait --for=condition=Ready pod -l app=inventario-app --timeout=120s
-
-$pods = kubectl get pods -l app=inventario-app -o json | ConvertFrom-Json
-$env:NEW_POD = ($pods.items | Where-Object {
-  $_.metadata.name -ne $env:POD
-} | Select-Object -First 1).metadata.name
-
-kubectl port-forward pod/$env:NEW_POD 3002:3000
 ```
 
-El `port-forward` anterior termina cuando se elimina el pod. Con el nuevo tunel abierto,
-en otra terminal se demuestra que el producto ya no existe:
+Conectarse al pod sustituto y consultar otra vez. El producto `PERSIST-001` ya no aparece.
 
-```powershell
-$products = Invoke-RestMethod http://127.0.0.1:3002/api/products
-if ($products.sku -contains "PERSIST-001") {
-  throw "El producto todavia existe; revise que se consulto el pod sustituto."
+### Explicación
+
+`emptyDir` existe durante la vida del pod. Cuando Kubernetes elimina ese pod, también elimina ese volumen y el pod sustituto obtiene uno nuevo. Por eso esta arquitectura no ofrece persistencia real entre recreaciones.
+
+---
+
+# ESTRATEGIA ADICIONAL — BLUE-GREEN
+
+## 13. ¿Por qué Blue-Green?
+
+Se eligió Blue-Green porque nuestra aplicación permite identificar claramente la versión activa mediante `/version`:
+
+```json
+{
+  "version": "v1",
+  "color": "blue",
+  "hostname": "..."
 }
-Write-Host "[OK] PERSIST-001 desaparecio con el emptyDir del pod eliminado."
 ```
 
-Al recrearse el pod, el producto agregado al almacenamiento local del pod eliminado ya no existe. Esto es esperado con `emptyDir`/almacenamiento local y se documenta como observación de persistencia.
+o:
 
-## 6. Componente adicional: Secret de Kubernetes
-
-La credencial ficticia nunca se escribe en archivos versionados.
-
-El Secret se crea antes del Deployment, como se muestra en la sección 4. Para
-regenerarlo manualmente:
-
-```powershell
-$env:API_KEY_DEMO = [guid]::NewGuid().ToString("N")
-kubectl create secret generic inventario-secret `
-  --from-literal=API_KEY=$env:API_KEY_DEMO `
-  --dry-run=client -o yaml |
-  kubectl apply -f -
+```json
+{
+  "version": "v2",
+  "color": "green",
+  "hostname": "..."
+}
 ```
 
-Verificar sin revelar el valor:
+BLUE permanece disponible mientras GREEN se valida. El cambio de tráfico se realiza modificando únicamente el selector del Service, por lo que el rollback también es inmediato.
 
-```powershell
-kubectl get secret inventario-secret
-kubectl describe secret inventario-secret
-```
+Para esta práctica es más fácil demostrar un corte determinista del 100 % que un Canary, donde sería necesario observar una distribución estadística del tráfico.
 
-El Deployment consume el Secret con `secretKeyRef`. `/version` solo informa si está configurado, no devuelve la credencial.
+### Desventaja
 
-## 7. Componente adicional: Trivy
+Durante Blue-Green ambas versiones consumen recursos al mismo tiempo. Además, con el JSON local/`emptyDir`, BLUE y GREEN no comparten estado. En producción sería recomendable utilizar una base de datos externa o persistencia compartida.
 
-El workflow escanea la imagen antes de publicarla:
+---
 
-```yaml
-severity: CRITICAL
-exit-code: "1"
-```
-
-Si Trivy encuentra una vulnerabilidad crítica, el job falla y la imagen no se publica. La imagen runtime usa distroless para reducir superficie de ataque.
-
-## 8. Componente adicional: arranque lento y readiness
-
-La aplicación acepta:
-
-```text
-STARTUP_DELAY_SECONDS
-```
-
-La versión v2 se desplegó con 12 segundos de arranque simulado. Durante ese intervalo `/health` devuelve HTTP 503 y luego cambia a 200.
-
-Verificar:
-
-```powershell
-kubectl get pods -l app=inventario-app -w
-kubectl describe pod NOMBRE_DEL_POD
-curl.exe -s "$env:URL/version"
-```
-
-La evidencia esperada incluye un evento semejante a:
-
-```text
-Readiness probe failed: HTTP probe failed with statuscode: 503
-```
-
-seguido de pods `1/1 Running` y rollout exitoso. Aumentar solo el número de réplicas no corrige una readiness mal configurada: únicamente crearía más pods que aún no están listos; el probe debe representar correctamente cuándo la aplicación puede recibir tráfico.
-
-## 9. Blue-Green
+## 14. Desplegar BLUE y GREEN
 
 Manifiestos:
 
@@ -275,88 +624,377 @@ k8s/blue-green/green-deployment.yaml
 k8s/blue-green/service.yaml
 ```
 
-Levantar ambos ambientes:
+Aplicar:
 
 ```powershell
 kubectl apply -f k8s/blue-green/blue-deployment.yaml
 kubectl apply -f k8s/blue-green/green-deployment.yaml
 kubectl apply -f k8s/blue-green/service.yaml
+
 kubectl rollout status deployment/inventario-app-blue
 kubectl rollout status deployment/inventario-app-green
 kubectl get pods -l app=inventario-bg --show-labels
 ```
 
-El Service comienza en BLUE:
+Se esperan cuatro pods:
+
+```text
+2 BLUE  -> version=v1, slot=blue
+2 GREEN -> version=v2, slot=green
+```
+
+El Service inicia apuntando a BLUE:
 
 ```powershell
 kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
-kubectl get endpoints inventario-blue-green
+```
+
+Resultado esperado:
+
+```text
+blue
+```
+
+---
+
+## 15. Abrir el Service Blue-Green
+
+En una terminal que debe permanecer abierta:
+
+```powershell
 minikube service inventario-blue-green --url
 ```
 
-Guardar la URL:
+Ejemplo:
+
+```text
+http://127.0.0.1:49519
+```
+
+En otra terminal guardar la URL devuelta:
 
 ```powershell
 $env:BGURL = "http://127.0.0.1:PUERTO"
-curl.exe -s "$env:BGURL/version"
 ```
 
-BLUE debe responder `v1` / `blue`.
+No se debe copiar el puerto del ejemplo: Minikube puede asignar uno diferente en cada ejecución.
 
-Probar GREEN antes del corte:
+---
 
-```powershell
-kubectl port-forward deployment/inventario-app-green 3003:3000
-```
+## 16. Automatización Blue-Green desarrollada por Jordy
 
-En otra terminal:
-
-```powershell
-curl.exe -s http://127.0.0.1:3003/health
-curl.exe -s http://127.0.0.1:3003/version
-```
-
-GREEN debe responder `v2` / `green`.
-
-### Corte BLUE -> GREEN
+### Cambiar BLUE -> GREEN
 
 ```powershell
 .\scripts\switch-blue-green.ps1 -Target green -Context minikube
-kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
-kubectl get endpoints inventario-blue-green
-curl.exe -s "$env:BGURL/version"
 ```
 
-Varias peticiones demuestran que el tráfico llega únicamente a pods GREEN:
+El script:
+
+1. fija explícitamente el contexto y namespace;
+2. espera que el Deployment destino esté disponible;
+3. cambia el selector del Service;
+4. confirma el nuevo selector;
+5. espera la convergencia de `EndpointSlice`;
+6. comprueba que todos los pods que reciben tráfico pertenezcan al slot destino;
+7. ejecuta rollback automático si la validación posterior al corte falla.
+
+Resultado real obtenido en Minikube:
+
+```text
+Selector activo: slot=green
+Pods que reciben trafico:
+  - inventario-app-green-...
+  - inventario-app-green-...
+Cambio Blue-Green completado correctamente.
+```
+
+---
+
+## 17. Smoke test de GREEN
 
 ```powershell
 .\scripts\smoke-test.ps1 `
   -BaseUrl $env:BGURL `
   -ExpectedVersion v2 `
   -ExpectedColor green
-
-1..4 | ForEach-Object {
-  curl.exe -s "$env:BGURL/version"
-  echo ""
-}
 ```
 
-### Rollback GREEN -> BLUE
+Resultado real validado:
+
+```text
+[OK] Health status=ok
+[OK] Version=v2 Color=green Pod=inventario-app-green-...
+[OK] Products respondio correctamente (3 producto(s))
+Smoke test completado correctamente.
+```
+
+El mismo Service ahora entrega únicamente la versión GREEN.
+
+---
+
+## 18. Rollback GREEN -> BLUE
 
 ```powershell
 .\scripts\switch-blue-green.ps1 -Target blue -Context minikube
-kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
-kubectl get endpoints inventario-blue-green
-curl.exe -s "$env:BGURL/version"
 ```
 
-El rollback es inmediato porque BLUE permanece desplegado y solo cambia el selector del Service.
+Resultado real validado:
 
-## 10. Métricas DORA — cómo obtener evidencia verificable
+```text
+Selector activo: slot=blue
+Pods que reciben trafico:
+  - inventario-app-blue-...
+  - inventario-app-blue-...
+Cambio Blue-Green completado correctamente.
+```
 
-Para cada cambio desplegado, registrar el timestamp del commit:
+Confirmar con el mismo Service:
 
 ```powershell
+.\scripts\smoke-test.ps1 `
+  -BaseUrl $env:BGURL `
+  -ExpectedVersion v1 `
+  -ExpectedColor blue
+```
+
+Resultado:
+
+```text
+[OK] Health status=ok
+[OK] Version=v1 Color=blue Pod=inventario-app-blue-...
+[OK] Products respondio correctamente (3 producto(s))
+Smoke test completado correctamente.
+```
+
+Esto demuestra el ciclo completo:
+
+```text
+BLUE v1
+   |
+   | switch
+   v
+GREEN v2
+   |
+   | rollback
+   v
+BLUE v1
+```
+
+---
+
+# MÉTRICAS DORA
+
+## 19. Lead Time for Changes
+
+Se utilizaron timestamps reales del historial Git y del momento en que cada cambio quedó disponible en Kubernetes.
+
+### Cambio 1 — runtime distroless
+
+```text
+Commit:     285e565...
+Commit at:  2026-07-23 18:57:46 -05:00
+Disponible: 2026-07-25 21:34:57.195746 -05:00
+Lead Time:  50 h 37 min 11 s
+```
+
+### Cambio 2 — arranque lento + Secret
+
+```text
+Commit:     a07b964...
+Commit at:  2026-07-26 00:44:14 -05:00
+Disponible: 2026-07-26 01:09:59.642816 -05:00
+Lead Time:  25 min 46 s
+```
+
+Promedio aproximado:
+
+```text
+25.52 horas
+```
+
+---
+
+## 20. Deployment Frequency
+
+Se contabilizaron tres promociones exitosas durante dos días de trabajo de despliegue:
+
+```text
+1. v1 estable desplegada en Kubernetes
+2. v2 promovida mediante RollingUpdate
+3. v2 GREEN promovida al tráfico mediante Blue-Green
+```
+
+```text
+Deployment Frequency = 3 promociones / 2 días
+                     = 1.5 promociones por día
+```
+
+---
+
+## 21. Change Failure Rate
+
+Intentos considerados:
+
+```text
+1. despliegue inicial que requirió corrección    -> fallo
+2. v1 corregida                                  -> éxito
+3. v2 mediante RollingUpdate                     -> éxito
+4. promoción GREEN mediante Blue-Green           -> éxito
+```
+
+```text
+CFR = 1 / 4 * 100
+    = 25 %
+```
+
+No se contabilizan como fallos de despliegue:
+
+- el error de quoting de PowerShell al intentar `kubectl patch`;
+- el `503` de readiness durante el arranque lento, porque fue intencional;
+- el rollback BLUE-Green realizado como demostración controlada.
+
+---
+
+# PROBLEMAS REALES Y SOLUCIONES
+
+## 22. Problemas encontrados
+
+### Trivy bloqueó la imagen inicial
+
+La imagen inicial presentó vulnerabilidades críticas. El pipeline falló antes del push.
+
+**Solución:** cambiar el runtime a distroless y non-root.
+
+### Permisos de `emptyDir` con distroless non-root
+
+El proceso con UID/GID 65532 no podía escribir correctamente en `/app/data`.
+
+**Solución:**
+
+```yaml
+runAsUser: 65532
+runAsGroup: 65532
+fsGroup: 65532
+```
+
+manteniendo `readOnlyRootFilesystem: true` y montando `/app/data` como volumen escribible.
+
+### `progress deadline exceeded`
+
+Durante una iteración Kubernetes superó el tiempo de progreso mientras se diagnosticaba el rollout.
+
+**Solución:** revisar pods/eventos, corregir permisos y posteriormente establecer:
+
+```yaml
+progressDeadlineSeconds: 300
+```
+
+para tolerar mejor pulls iniciales de GHCR en el entorno local.
+
+### Timeout temporal de Docker Hub en GitHub Actions
+
+Un run encontró un timeout externo al descargar una imagen base. Un rerun posterior terminó correctamente.
+
+### `kubectl patch` y PowerShell
+
+El JSON del patch fue interpretado incorrectamente por PowerShell.
+
+**Solución final:** usar `kubectl set selector`, y posteriormente automatizar el flujo mediante `scripts/switch-blue-green.ps1`.
+
+---
+
+# TRABAJO EN PAREJA
+
+## 23. Contribuciones
+
+### Gabriel
+
+Implementación principal de:
+
+- aplicación y pruebas;
+- Docker multi-stage;
+- pipeline CI/CD;
+- Trivy/GHCR;
+- Kubernetes base;
+- RollingUpdate;
+- Secret y readiness;
+- persistencia;
+- primera implementación y pruebas Blue-Green;
+- documentación y evidencias iniciales.
+
+### Jordy
+
+Contribuciones versionadas en Git:
+
+- `scripts/switch-blue-green.ps1`;
+- `scripts/smoke-test.ps1`;
+- integración de automatizaciones y documentación;
+- mejora visual para mostrar el estado del Secret en la interfaz;
+- ajuste de `progressDeadlineSeconds`;
+- actualización del informe y documentación.
+
+Los commits recientes aparecen en el historial con ambos autores, demostrando participación de los dos integrantes.
+
+---
+
+# DEMOSTRACIÓN RÁPIDA PARA EL PROFESOR
+
+## 24. Secuencia recomendada
+
+### 1. Mostrar CI/CD
+
+Abrir:
+
+```text
+GitHub -> Actions -> ci-cd
+```
+
+Mostrar jobs verdes y explicar:
+
+```text
+build-test -> build-push
+                 |
+                 +-> Docker build
+                 +-> Trivy
+                 +-> GHCR
+```
+
+### 2. Mostrar RollingUpdate
+
+```powershell
+kubectl get deployment inventario-app
+kubectl get deployment inventario-app -o jsonpath="{.spec.strategy.rollingUpdate}"
+echo ""
+```
+
+Debe verse:
+
+```text
+2/2
+{"maxSurge":1,"maxUnavailable":1}
+```
+
+### 3. Mostrar Secret
+
+```powershell
+kubectl get secret inventario-secret
+kubectl describe secret inventario-secret
+```
+
+No mostrar el valor de la credencial.
+
+### 4. Mostrar BLUE/GREEN
+
+```powershell
+kubectl get pods -l app=inventario-bg --show-labels
+kubectl get svc inventario-blue-green -o jsonpath="{.spec.selector.slot}"
+```
+
+### 5. Cambiar a GREEN
+
+```powershell
+<<<<<<< HEAD
 git show -s --format="%H | %cI | %s" SHA_DEL_COMMIT
 ```
 
@@ -403,44 +1041,105 @@ Jordy agregó dos automatizaciones reproducibles:
 
 ```powershell
 # Corte seguro con validación del Deployment y de los endpoints
+=======
+>>>>>>> d06967e11d8d28a089684e82c4fe3252424e6249
 .\scripts\switch-blue-green.ps1 -Target green -Context minikube
+```
 
-# Smoke test posterior al despliegue
+### 6. Validar GREEN
+
+```powershell
 .\scripts\smoke-test.ps1 `
   -BaseUrl $env:BGURL `
   -ExpectedVersion v2 `
   -ExpectedColor green
 ```
 
-`switch-blue-green.ps1` evita enviar tráfico a un Deployment no disponible, confirma
-el selector y verifica que todos los endpoints pertenezcan al color solicitado.
-`smoke-test.ps1` valida `/health`, `/version` y `/api/products`, con reintentos para el
-arranque lento y aserciones opcionales de versión/color.
+### 7. Rollback a BLUE
 
-La explicación y los pasos de versionado con la identidad Git de Jordy están en
-[`docs/GUIA_JORDY.md`](docs/GUIA_JORDY.md).
+```powershell
+.\scripts\switch-blue-green.ps1 -Target blue -Context minikube
+```
 
-## Endpoints
+### 8. Validar BLUE
 
-| Método y ruta | Función |
-|---|---|
-| `GET /health` | Salud/readiness de la aplicación. |
-| `GET /version` | Versión, color, hostname y datos de configuración no sensibles. |
-| `GET /api/products` | Lista productos. |
-| `GET /api/products/:id` | Obtiene un producto. |
-| `POST /api/products` | Crea un producto. |
-| `PATCH /api/products/:id` | Actualiza un producto. |
-| `DELETE /api/products/:id` | Elimina un producto. |
-| `GET /` | Interfaz web. |
+```powershell
+.\scripts\smoke-test.ps1 `
+  -BaseUrl $env:BGURL `
+  -ExpectedVersion v1 `
+  -ExpectedColor blue
+```
 
-## Variables de entorno
+Con esta secuencia se demuestra el pipeline, Kubernetes, los componentes adicionales, el corte Blue-Green y el rollback usando la misma URL del Service.
 
-| Variable | Por defecto | Uso |
+---
+
+## 25. Endpoints
+
+| Método | Ruta | Función |
 |---|---|---|
-| `PORT` | `3000` | Puerto HTTP. |
-| `APP_VERSION` | `v1` | Versión mostrada por la app. |
-| `APP_COLOR` | `blue` | Color/identificador visual de la versión. |
-| `SIMULATE_FAILURE` | `false` | Simulación de fallo. |
-| `DB_PATH` | `./data/products.json` | Ruta del archivo JSON. |
-| `STARTUP_DELAY_SECONDS` | `0` | Tiempo durante el cual `/health` devuelve 503 al iniciar. |
-| `API_KEY` | vacío | Credencial ficticia consumida desde Kubernetes Secret. |
+| GET | `/health` | Salud/readiness de la aplicación |
+| GET | `/version` | Versión, color, hostname, delay y estado del Secret |
+| GET | `/api/products` | Lista productos |
+| GET | `/api/products/:id` | Obtiene producto |
+| POST | `/api/products` | Crea producto |
+| PATCH | `/api/products/:id` | Actualiza producto |
+| DELETE | `/api/products/:id` | Elimina producto |
+| GET | `/` | Interfaz web |
+
+---
+
+## 26. Variables de entorno
+
+| Variable | Default | Uso |
+|---|---:|---|
+| `PORT` | `3000` | Puerto HTTP |
+| `APP_VERSION` | `v1` | Versión visible de la app |
+| `APP_COLOR` | `blue` | Identificador visual BLUE/GREEN |
+| `SIMULATE_FAILURE` | `false` | Fuerza fallo de `/health` |
+| `DB_PATH` | `./data/products.json` | Ruta del JSON |
+| `STARTUP_DELAY_SECONDS` | `0` | Simula arranque lento |
+| `API_KEY` | vacío | Credencial ficticia inyectada desde Secret |
+
+---
+
+## 27. Entregables
+
+- [`Dockerfile`](Dockerfile)
+- [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
+- [`k8s/deployment.yaml`](k8s/deployment.yaml)
+- [`k8s/service.yaml`](k8s/service.yaml)
+- [`k8s/blue-green/`](k8s/blue-green/)
+- [`scripts/switch-blue-green.ps1`](scripts/switch-blue-green.ps1)
+- [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1)
+- [`docs/INFORME_REFLEXION.md`](docs/INFORME_REFLEXION.md)
+- [`output/pdf/informe-reflexion-cicd.pdf`](output/pdf/informe-reflexion-cicd.pdf)
+- [`docs/EVIDENCIAS_VERIFICACION.md`](docs/EVIDENCIAS_VERIFICACION.md)
+
+Regenerar el PDF del informe:
+
+```powershell
+py -m pip install -r requirements-report.txt
+py scripts/generate-informe.py
+```
+
+---
+
+## Resultado final
+
+El proyecto demuestra un flujo completo y reproducible de entrega de software:
+
+```text
+Código
+ -> pruebas
+ -> build Docker
+ -> escaneo de seguridad
+ -> publicación GHCR
+ -> despliegue Kubernetes
+ -> RollingUpdate
+ -> BLUE/GREEN
+ -> smoke test
+ -> rollback
+```
+
+El estado final verificado mantiene **BLUE v1** sirviendo tráfico, con GREEN v2 disponible para un nuevo corte cuando sea necesario.
